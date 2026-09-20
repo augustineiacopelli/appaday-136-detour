@@ -1,0 +1,1295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Detour</title>
+<meta name="description" content="Find the strangest roadside stops along any American drive, ranked by how far off the highway they sit.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Overpass:wght@300;400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root {
+    --asphalt: #23272b;
+    --asphalt-deep: #191c1f;
+    --sign: #1b5e3f;
+    --sign-dark: #144730;
+    --cream: #f2f0ea;
+    --stripe: #f3c623;
+    --slate: #8d97a1;
+    --alert: #e2725b;
+    --rule: rgba(242, 240, 234, 0.16);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { margin: 0; padding: 0; }
+
+  body {
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    background: var(--asphalt);
+    color: var(--cream);
+    font-family: Overpass, "Helvetica Neue", Arial, sans-serif;
+    font-weight: 400;
+    line-height: 1.5;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  a { color: var(--stripe); }
+
+  /* ---------- header: highway guide sign ---------- */
+
+  .guide {
+    background: var(--sign);
+    padding: 0.55rem;
+  }
+
+  .guide-inner {
+    border: 2px solid rgba(242, 240, 234, 0.85);
+    border-radius: 0.5rem;
+    padding: 0.7rem 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    flex-wrap: wrap;
+  }
+
+  .exit {
+    font-weight: 800;
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    color: rgba(242, 240, 234, 0.75);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .wordmark {
+    font-weight: 800;
+    font-size: clamp(1.5rem, 6.5vw, 2.1rem);
+    letter-spacing: -0.02em;
+    line-height: 1;
+    margin: 0;
+    flex: 1 1 auto;
+  }
+
+  .guide-inner a {
+    color: rgba(242, 240, 234, 0.9);
+    text-decoration: none;
+    border-bottom: 1px solid rgba(242, 240, 234, 0.45);
+    font-size: 0.82rem;
+    font-weight: 600;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .guide-inner a:hover { color: #fff; }
+
+  /* ---------- form ---------- */
+
+  main {
+    flex: 1 1 auto;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .plan {
+    padding: 1rem 0.9rem 0.8rem;
+    display: grid;
+    gap: 0.6rem;
+    grid-template-columns: 1fr;
+  }
+
+  .field { display: grid; gap: 0.25rem; }
+
+  .field span {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--slate);
+  }
+
+  input[type="text"], input[type="password"] {
+    min-height: 44px;
+    width: 100%;
+    padding: 0.55rem 0.75rem;
+    font: inherit;
+    font-size: 1rem;
+    color: var(--cream);
+    background: var(--asphalt-deep);
+    border: 1px solid var(--rule);
+    border-radius: 0.4rem;
+  }
+
+  input:focus-visible, button:focus-visible, a:focus-visible {
+    outline: 3px solid var(--stripe);
+    outline-offset: 2px;
+  }
+
+  .go, .ghost {
+    min-height: 44px;
+    font: inherit;
+    font-weight: 800;
+    border-radius: 0.4rem;
+    cursor: pointer;
+    padding: 0.55rem 1rem;
+  }
+
+  .go {
+    background: var(--stripe);
+    color: #201c05;
+    border: none;
+    font-size: 1.02rem;
+    letter-spacing: 0.01em;
+  }
+
+  .go[disabled] { opacity: 0.55; cursor: progress; }
+
+  .ghost {
+    background: transparent;
+    color: var(--cream);
+    border: 1px solid var(--rule);
+    font-weight: 600;
+  }
+
+  .plan-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: end;
+  }
+
+  .plan-actions .go { flex: 1 1 auto; }
+
+  /* ---------- banners ---------- */
+
+  .banner {
+    margin: 0 0.9rem 0.6rem;
+    padding: 0.6rem 0.75rem;
+    border-radius: 0.4rem;
+    font-size: 0.9rem;
+    border-left: 4px solid var(--stripe);
+    background: var(--asphalt-deep);
+  }
+
+  .banner.bad { border-left-color: var(--alert); }
+
+  .banner[hidden] { display: none; }
+
+  /* ---------- map ---------- */
+
+  #map {
+    width: 100%;
+    height: clamp(15rem, 44dvh, 30rem);
+    background: var(--asphalt-deep);
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+    z-index: 0;
+  }
+
+  .leaflet-container { font-family: inherit; background: var(--asphalt-deep); }
+
+  .marker-plaque {
+    background: var(--stripe);
+    color: #201c05;
+    border: 2px solid #201c05;
+    border-radius: 0.2rem;
+    font-family: Overpass, Arial, sans-serif;
+    font-weight: 800;
+    font-size: 0.82rem;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.6rem;
+    text-align: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    box-shadow: 0 2px 0 rgba(0, 0, 0, 0.5);
+  }
+
+  /* ---------- trip summary + results ---------- */
+
+  .summary {
+    padding: 0.85rem 0.9rem 0.2rem;
+    display: flex;
+    gap: 1.4rem;
+    flex-wrap: wrap;
+    align-items: baseline;
+  }
+
+  .summary b {
+    font-weight: 800;
+    font-size: 1.25rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .summary small { color: var(--slate); font-size: 0.8rem; }
+
+  .stops {
+    list-style: none;
+    margin: 0;
+    padding: 0.5rem 0.9rem 1.5rem;
+    overflow-y: auto;
+  }
+
+  .stop {
+    width: 100%;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.85rem;
+    align-items: start;
+    text-align: left;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    border: none;
+    border-top: 1px solid var(--rule);
+    padding: 0.85rem 0.2rem;
+    min-height: 44px;
+    cursor: pointer;
+  }
+
+  .stops li:first-child .stop { border-top: none; }
+
+  .stop:hover { background: rgba(242, 240, 234, 0.04); }
+
+  .post {
+    background: var(--stripe);
+    color: #201c05;
+    border-radius: 0.2rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    font-size: 0.85rem;
+    padding: 0.3rem 0.45rem;
+    text-align: center;
+    min-width: 2.6rem;
+  }
+
+  .post em {
+    display: block;
+    font-style: normal;
+    font-weight: 600;
+    font-size: 0.6rem;
+    letter-spacing: 0.04em;
+    opacity: 0.7;
+  }
+
+  .stop h3 {
+    margin: 0 0 0.15rem;
+    font-size: 1.02rem;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+
+  .stop p { margin: 0; font-size: 0.88rem; color: var(--slate); }
+
+  .stop .pitch { color: rgba(242, 240, 234, 0.82); margin-top: 0.25rem; }
+
+  .empty { padding: 1.5rem 0.9rem; color: var(--slate); font-size: 0.95rem; }
+
+  /* ---------- bottom sheet ---------- */
+
+  .sheet {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1200;
+    background: var(--sign);
+    border-top: 3px solid var(--stripe);
+    padding: 0.9rem 0.9rem calc(1rem + env(safe-area-inset-bottom, 0px));
+    transform: translateY(102%);
+    transition: transform 0.22s ease;
+  }
+
+  .sheet.open { transform: translateY(0); }
+
+  .sheet h2 {
+    margin: 0.1rem 0 0.35rem;
+    font-size: 1.2rem;
+    font-weight: 800;
+    line-height: 1.25;
+  }
+
+  .sheet p { margin: 0 0 0.6rem; font-size: 0.92rem; }
+
+  .sheet .meta { color: rgba(242, 240, 234, 0.78); font-variant-numeric: tabular-nums; }
+
+  .sheet-row { display: flex; gap: 0.5rem; align-items: center; }
+
+  .sheet-row a {
+    flex: 1 1 auto;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--stripe);
+    color: #201c05;
+    font-weight: 800;
+    border-radius: 0.4rem;
+    text-decoration: none;
+    padding: 0.5rem 0.8rem;
+  }
+
+  .sheet-row .ghost { border-color: rgba(242, 240, 234, 0.4); }
+
+  /* ---------- settings modal ---------- */
+
+  .scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 1300;
+    background: rgba(12, 14, 16, 0.72);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+  }
+
+  .scrim[hidden] { display: none; }
+
+  .modal {
+    width: 100%;
+    max-width: 26rem;
+    background: var(--asphalt-deep);
+    border: 1px solid var(--rule);
+    border-radius: 0.6rem;
+    padding: 1.1rem;
+  }
+
+  .modal h2 { margin: 0 0 0.3rem; font-size: 1.1rem; font-weight: 800; }
+
+  .modal p { margin: 0 0 0.9rem; font-size: 0.85rem; color: var(--slate); }
+
+  .modal-row { display: flex; gap: 0.5rem; margin-top: 0.9rem; }
+
+  .modal-row .go { flex: 1 1 auto; }
+
+  /* ---------- footer ---------- */
+
+  footer {
+    border-top: 1px solid var(--rule);
+    padding: 1rem 0.9rem calc(6rem + env(safe-area-inset-bottom, 0px));
+    font-size: 0.8rem;
+    color: var(--slate);
+    display: grid;
+    gap: 0.4rem;
+  }
+
+  footer a { color: var(--slate); }
+
+  @media (min-width: 40rem) {
+    .plan { grid-template-columns: 1fr 1fr auto; align-items: end; }
+    .plan-actions { grid-column: auto; }
+    .sheet { left: auto; right: 1rem; bottom: 1rem; max-width: 24rem; border-radius: 0.6rem; border: 3px solid var(--stripe); }
+    footer { padding-bottom: 1.5rem; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sheet { transition: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="guide">
+  <div class="guide-inner">
+    <span class="exit">APP 136</span>
+    <h1 class="wordmark">Detour</h1>
+    <a href="https://augustineiacopelli.github.io/appaday/">AppADay</a>
+  </div>
+</header>
+
+<main>
+  <form class="plan" id="plan" autocomplete="off">
+    <label class="field">
+      <span>Starting city</span>
+      <input type="text" id="start" name="start" placeholder="Wichita, KS" required>
+    </label>
+    <label class="field">
+      <span>Ending city</span>
+      <input type="text" id="end" name="end" placeholder="Santa Fe, NM" required>
+    </label>
+    <div class="plan-actions">
+      <button type="submit" class="go" id="submit">Find stops</button>
+      <button type="button" class="ghost" id="open-settings" aria-label="Settings">Key</button>
+    </div>
+  </form>
+
+  <p class="banner" id="status" role="status" aria-live="polite" hidden></p>
+  <p class="banner bad" id="error" role="alert" hidden></p>
+
+  <div id="map" aria-label="Route map"></div>
+
+  <div class="summary" id="summary" hidden>
+    <span><b id="miles">0</b> <small>road miles</small></span>
+    <span><b id="count">0</b> <small>stops found</small></span>
+  </div>
+
+  <ul class="stops" id="stops"></ul>
+  <p class="empty" id="empty">Pick two American cities. Detour drives the route, sweeps eight kilometers to either side of it, and keeps the fifteen strangest things standing next to the road.</p>
+</main>
+
+<footer>
+  <p><a href="https://augustineiacopelli.github.io/appaday/">Back to the AppADay portfolio</a></p>
+  <p id="build">Build</p>
+  <p>Map data and places from OpenStreetMap contributors, licensed under ODbL. Driving routes from the OSRM demo server. Pitches written by Claude.</p>
+</footer>
+
+<section class="sheet" id="sheet" aria-live="polite">
+  <p class="meta" id="sheet-meta">Mile 0</p>
+  <h2 id="sheet-name">Stop</h2>
+  <p id="sheet-pitch"></p>
+  <div class="sheet-row">
+    <a id="sheet-map" href="https://maps.google.com/" target="_blank" rel="noopener">Open in Maps</a>
+    <button type="button" class="ghost" id="sheet-close">Close</button>
+  </div>
+</section>
+
+<div class="scrim" id="scrim" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <h2 id="modal-title">Claude API key</h2>
+    <p>Stored only in this browser. Without a key the stops still load and get ranked locally, just without written pitches.</p>
+    <label class="field">
+      <span>Key</span>
+      <input type="password" id="apikey" placeholder="sk-ant-..." autocomplete="off">
+    </label>
+    <div class="modal-row">
+      <button type="button" class="go" id="save-key">Save key</button>
+      <button type="button" class="ghost" id="close-settings">Close</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var BUILD = '136.7';
+  var CLAUDE_MODEL = 'claude-sonnet-5';
+  var MAX_TRIP_MILES = 1200;
+  var SAMPLE_INTERVAL_MILES = 25;
+  var AROUND_RADIUS_M = 8000;
+  var MAX_PINS = 15;
+  var MAX_CANDIDATES_TO_CLAUDE = 60;
+  var MAX_DETOUR_MILES = 5;
+  var GEO_CACHE_KEY = 'detour-geo-v1';
+  var API_STORE_KEY = 'detour-key';
+  var EARTH_MILES = 3958.7613;
+
+  var OVERPASS_HOSTS = [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter'
+  ];
+
+  var TAG_RULES = [
+    ['tourism', 'attraction'],
+    ['tourism', 'artwork'],
+    ['tourism', 'viewpoint'],
+    ['tourism', 'museum'],
+    ['historic', 'memorial']
+  ];
+
+  var HEURISTIC = { artwork: 9, attraction: 8, viewpoint: 5, museum: 4, memorial: 3 };
+
+  var state = {
+    origin: null,
+    destination: null,
+    coords: [],
+    mileage: [],
+    samples: [],
+    candidates: [],
+    results: [],
+    totalMiles: 0,
+    busy: false
+  };
+
+  var el = {};
+  var map = null;
+  var routeLine = null;
+  var pinLayer = null;
+
+  /* ---------- storage ---------- */
+
+  function readStore(key, fallback) {
+    try {
+      var raw = window.localStorage.getItem(key);
+      if (!raw) return fallback;
+      return JSON.parse(raw);
+    } catch (err) {
+      return fallback;
+    }
+  }
+
+  function writeStore(key, value) {
+    try {
+      window.localStorage.setItem(key, JSON.stringify(value));
+    } catch (err) {
+      /* storage unavailable or full; the app keeps working without it */
+    }
+  }
+
+  function getKey() {
+    var v = readStore(API_STORE_KEY, '');
+    return typeof v === 'string' ? v : '';
+  }
+
+  /* ---------- geometry ---------- */
+
+  function toRad(d) { return d * Math.PI / 180; }
+
+  function haversineMiles(lat1, lon1, lat2, lon2) {
+    var dLat = toRad(lat2 - lat1);
+    var dLon = toRad(lon2 - lon1);
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return 2 * EARTH_MILES * Math.asin(Math.min(1, Math.sqrt(a)));
+  }
+
+  function approxMiles(lat1, lon1, lat2, lon2) {
+    var x = toRad(lon2 - lon1) * Math.cos(toRad((lat1 + lat2) / 2));
+    var y = toRad(lat2 - lat1);
+    return EARTH_MILES * Math.sqrt(x * x + y * y);
+  }
+
+  function sleep(ms) {
+    return new Promise(function (resolve) { window.setTimeout(resolve, ms); });
+  }
+
+  /* ---------- banners ---------- */
+
+  function setStatus(text) {
+    if (!el.status) return;
+    if (!text) {
+      el.status.hidden = true;
+      el.status.textContent = '';
+      return;
+    }
+    el.status.hidden = false;
+    el.status.textContent = text;
+  }
+
+  function setError(text) {
+    if (!el.error) return;
+    if (!text) {
+      el.error.hidden = true;
+      el.error.textContent = '';
+      return;
+    }
+    el.error.hidden = false;
+    el.error.textContent = text;
+  }
+
+  /* ---------- map ---------- */
+
+  function initMap() {
+    map = L.map('map', { scrollWheelZoom: false }).setView([39.5, -98.35], 4);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 18,
+      attribution: 'Map data OpenStreetMap contributors, ODbL'
+    }).addTo(map);
+    pinLayer = L.layerGroup().addTo(map);
+  }
+
+  /* ---------- 3. geocoding ---------- */
+
+  function fetchWithTimeout(url, opts, ms, label) {
+    var settled = false;
+    var timeout = new Promise(function (resolve, reject) {
+      window.setTimeout(function () {
+        if (settled) return;
+        reject(new Error(label + ' did not answer within ' + Math.round(ms / 1000) +
+          ' seconds. It may be blocked on this network.'));
+      }, ms);
+    });
+    var call = fetch(url, opts || {}).then(function (res) {
+      settled = true;
+      return res;
+    }, function (err) {
+      settled = true;
+      throw new Error(label + ' could not be reached: ' +
+        (err && err.message ? err.message : 'network error') +
+        '. Detour needs to run from a real http server or GitHub Pages, not a sandboxed preview.');
+    });
+    return Promise.race([call, timeout]);
+  }
+
+  function geocode(query) {
+    var cleaned = String(query || '').trim();
+    var cacheKey = cleaned.toLowerCase();
+    var cache = readStore(GEO_CACHE_KEY, {});
+    if (cache && cache[cacheKey]) return Promise.resolve(cache[cacheKey]);
+
+    var url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q=' +
+      encodeURIComponent(cleaned);
+
+    return fetchWithTimeout(url, { headers: { Accept: 'application/json' } }, 12000,
+      'The geocoder (Nominatim)').then(function (res) {
+      if (!res.ok) throw new Error('Geocoder responded with ' + res.status);
+      return res.json();
+    }).then(function (data) {
+      if (!Array.isArray(data) || data.length === 0) return null;
+      var hit = {
+        lat: parseFloat(data[0].lat),
+        lon: parseFloat(data[0].lon),
+        label: String(data[0].display_name || cleaned)
+      };
+      if (!isFinite(hit.lat) || !isFinite(hit.lon)) return null;
+      var next = readStore(GEO_CACHE_KEY, {}) || {};
+      next[cacheKey] = hit;
+      writeStore(GEO_CACHE_KEY, next);
+      return hit;
+    });
+  }
+
+  /* ---------- 4. routing ---------- */
+
+  function fetchRoute(a, b) {
+    var url = 'https://router.project-osrm.org/route/v1/driving/' +
+      a.lon + ',' + a.lat + ';' + b.lon + ',' + b.lat +
+      '?overview=full&geometries=geojson';
+
+    return fetchWithTimeout(url, {}, 15000, 'The router (OSRM)').then(function (res) {
+      if (!res.ok) throw new Error('Router responded with ' + res.status);
+      return res.json();
+    }).then(function (data) {
+      if (!data || data.code !== 'Ok' || !Array.isArray(data.routes) || data.routes.length === 0) {
+        throw new Error('No drivable route connects those two cities. Try cities on the mainland road network.');
+      }
+      var route = data.routes[0];
+      var miles = route.distance / 1609.344;
+      if (miles > MAX_TRIP_MILES) {
+        throw new Error('That drive runs about ' + Math.round(miles) + ' miles. Detour caps trips at ' +
+          MAX_TRIP_MILES + ' miles so the search stays fast. Pick a closer pair of cities.');
+      }
+      var flipped = route.geometry.coordinates.map(function (pair) {
+        return [pair[1], pair[0]];
+      });
+      if (flipped.length < 2) throw new Error('The router returned an empty route shape.');
+
+      if (routeLine) {
+        map.removeLayer(routeLine);
+        routeLine = null;
+      }
+      routeLine = L.polyline(flipped, { color: '#f3c623', weight: 4, opacity: 0.95 }).addTo(map);
+      map.fitBounds(routeLine.getBounds(), { padding: [28, 28] });
+
+      return { coords: flipped, miles: miles };
+    });
+  }
+
+  /* ---------- 5. mileage and sampling ---------- */
+
+  function buildMileage(coords) {
+    var mileage = new Array(coords.length);
+    mileage[0] = 0;
+    for (var i = 1; i < coords.length; i++) {
+      mileage[i] = mileage[i - 1] +
+        haversineMiles(coords[i - 1][0], coords[i - 1][1], coords[i][0], coords[i][1]);
+    }
+    return mileage;
+  }
+
+  function decimate() {
+    var coords = state.coords;
+    var mileage = state.mileage;
+    var samples = [];
+    var threshold = 0;
+    for (var i = 0; i < coords.length; i++) {
+      if (mileage[i] >= threshold) {
+        samples.push({ lat: coords[i][0], lon: coords[i][1], idx: i, mile: mileage[i] });
+        threshold = mileage[i] + SAMPLE_INTERVAL_MILES;
+      }
+    }
+    var last = coords.length - 1;
+    if (samples.length === 0 || samples[samples.length - 1].idx !== last) {
+      samples.push({ lat: coords[last][0], lon: coords[last][1], idx: last, mile: mileage[last] });
+    }
+    return samples;
+  }
+
+  /* ---------- 6. attractions ---------- */
+
+  function buildOverpassQuery(samples) {
+    var around = samples.map(function (s) {
+      return s.lat.toFixed(5) + ',' + s.lon.toFixed(5);
+    }).join(',');
+    var filter = '(around:' + AROUND_RADIUS_M + ',' + around + ')';
+
+    var parts = [];
+    for (var t = 0; t < TAG_RULES.length; t++) {
+      var k = TAG_RULES[t][0];
+      var v = TAG_RULES[t][1];
+      var sel = '["' + k + '"="' + v + '"]';
+      parts.push('  node' + sel + filter + ';');
+      parts.push('  way' + sel + filter + ';');
+      parts.push('  relation' + sel + filter + ';');
+    }
+
+    return '[out:json][timeout:60];\n(\n' + parts.join('\n') + '\n);\nout center;';
+  }
+
+  function postOverpass(host, query) {
+    return fetchWithTimeout(host, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+      body: query
+    }, 75000, 'Overpass').then(function (res) {
+      if (!res.ok) {
+        var err = new Error('Overpass responded with ' + res.status);
+        err.status = res.status;
+        throw err;
+      }
+      return res.json();
+    });
+  }
+
+  function normalizeElements(data) {
+    var out = [];
+    var elements = (data && Array.isArray(data.elements)) ? data.elements : [];
+    var unnamed = 0;
+    for (var i = 0; i < elements.length; i++) {
+      var e = elements[i];
+      var tags = e.tags || {};
+      var name = tags.name;
+      if (!name) { unnamed++; continue; }
+
+      var lat = null;
+      var lon = null;
+      if (typeof e.lat === 'number' && typeof e.lon === 'number') {
+        lat = e.lat;
+        lon = e.lon;
+      } else if (e.center && typeof e.center.lat === 'number' && typeof e.center.lon === 'number') {
+        lat = e.center.lat;
+        lon = e.center.lon;
+      }
+      if (lat === null || lon === null) continue;
+
+      var tag = tags.tourism || tags.historic || 'attraction';
+      out.push({
+        id: e.type + '/' + e.id,
+        name: String(name),
+        tag: String(tag),
+        lat: lat,
+        lon: lon
+      });
+    }
+    if (data && data.remark) {
+      window.console.warn('Detour: Overpass remark: ' + data.remark);
+    }
+    window.console.log('Detour: Overpass returned ' + elements.length + ' elements, ' +
+      unnamed + ' unnamed, ' + out.length + ' usable.');
+    return out;
+  }
+
+  function fetchAttractions(samples) {
+    var query = buildOverpassQuery(samples);
+    window.console.log('Detour: Overpass query (' + query.length + ' chars)\n' + query);
+    return postOverpass(OVERPASS_HOSTS[0], query).catch(function (err) {
+      window.console.warn('Detour: primary Overpass host failed: ' + err.message);
+      if (err && (err.status === 429 || err.status === 504)) {
+        return sleep(1200).then(function () {
+          return postOverpass(OVERPASS_HOSTS[1], query);
+        });
+      }
+      throw err;
+    }).then(normalizeElements);
+  }
+
+  /* ---------- 7. snapping ---------- */
+
+  function snapToRoute(candidates) {
+    var coords = state.coords;
+    var mileage = state.mileage;
+    var samples = state.samples;
+    var coarseLimit = SAMPLE_INTERVAL_MILES + MAX_DETOUR_MILES + 2;
+    var seen = {};
+    var out = [];
+    var coarseRejects = 0;
+    var minDetour = Infinity;
+
+    for (var c = 0; c < candidates.length; c++) {
+      var cand = candidates[c];
+      var bestSample = 0;
+      var bestCoarse = Infinity;
+
+      for (var s = 0; s < samples.length; s++) {
+        var d = approxMiles(cand.lat, cand.lon, samples[s].lat, samples[s].lon);
+        if (d < bestCoarse) {
+          bestCoarse = d;
+          bestSample = s;
+        }
+      }
+      if (bestCoarse > coarseLimit) { coarseRejects++; continue; }
+
+      var lo = samples[Math.max(0, bestSample - 1)].idx;
+      var hi = samples[Math.min(samples.length - 1, bestSample + 1)].idx;
+      var bestExact = Infinity;
+      var bestIdx = lo;
+
+      for (var i = lo; i <= hi; i++) {
+        var e = haversineMiles(cand.lat, cand.lon, coords[i][0], coords[i][1]);
+        if (e < bestExact) {
+          bestExact = e;
+          bestIdx = i;
+        }
+      }
+      if (bestExact < minDetour) minDetour = bestExact;
+      if (bestExact > MAX_DETOUR_MILES) continue;
+
+      var key = cand.name.toLowerCase() + '@' + cand.lat.toFixed(3) + ',' + cand.lon.toFixed(3);
+      if (seen[key]) continue;
+      seen[key] = true;
+
+      out.push({
+        id: cand.id,
+        name: cand.name,
+        tag: cand.tag,
+        lat: cand.lat,
+        lon: cand.lon,
+        detour: bestExact,
+        position: mileage[bestIdx],
+        score: 0,
+        pitch: ''
+      });
+    }
+
+    out.sort(function (a, b) { return a.position - b.position; });
+    state.snapStats = {
+      examined: candidates.length,
+      coarseRejects: coarseRejects,
+      kept: out.length,
+      minDetour: minDetour
+    };
+    window.console.log('Detour: snapped ' + out.length + ' of ' + candidates.length +
+      ' (coarse rejects ' + coarseRejects + ', closest ' +
+      (isFinite(minDetour) ? minDetour.toFixed(2) + ' mi' : 'n/a') + ').');
+    return out;
+  }
+
+  /* ---------- 8. scoring ---------- */
+
+  function heuristicScore(item) {
+    var base = HEURISTIC[item.tag] || 4;
+    var closeness = Math.max(0, (MAX_DETOUR_MILES - item.detour) / MAX_DETOUR_MILES);
+    return base + closeness;
+  }
+
+  function applyHeuristic(list) {
+    for (var i = 0; i < list.length; i++) {
+      list[i].score = heuristicScore(list[i]);
+    }
+    return list;
+  }
+
+  function buildPrompt(payload) {
+    return 'You are a road trip scout judging roadside stops for how memorably strange they are. ' +
+      'Here is a JSON array of places, each with an id, a name, and an OpenStreetMap tag:\n\n' +
+      JSON.stringify(payload) +
+      '\n\nFor every place, return an object with three fields: id (copied exactly), ' +
+      'weirdness (an integer from 1 to 10 where 10 is a giant fiberglass roadside oddity and 1 is a ' +
+      'generic scenic pullout), and pitch (one sentence, at most twenty words, telling a driver why to stop). ' +
+      'Judge only from the name and tag. Do not invent facts you cannot infer from the name. ' +
+      'Reply with a raw JSON array and nothing else. No markdown fences, no prose, no explanation.';
+  }
+
+  function parseScores(text) {
+    var cleaned = String(text || '').replace(/```json/g, '').replace(/```/g, '').trim();
+    var first = cleaned.indexOf('[');
+    var last = cleaned.lastIndexOf(']');
+    if (first === -1 || last === -1 || last <= first) return null;
+    try {
+      var parsed = JSON.parse(cleaned.slice(first, last + 1));
+      return Array.isArray(parsed) ? parsed : null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function scoreWithClaude(candidates) {
+    var trimmed = candidates.slice().sort(function (a, b) {
+      return a.detour - b.detour;
+    }).slice(0, MAX_CANDIDATES_TO_CLAUDE);
+
+    var key = getKey();
+    if (!key) {
+      return Promise.resolve({ list: applyHeuristic(trimmed), usedClaude: false, note: '' });
+    }
+
+    var payload = trimmed.map(function (c) {
+      return { id: c.id, name: c.name, tag: c.tag };
+    });
+
+    return fetchWithTimeout('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: CLAUDE_MODEL,
+        max_tokens: 2000,
+        thinking: { type: 'disabled' },
+        messages: [{ role: 'user', content: buildPrompt(payload) }]
+      })
+    }, 60000, 'The Claude API').then(function (res) {
+      if (!res.ok) throw new Error('Claude responded with ' + res.status);
+      return res.json();
+    }).then(function (data) {
+      var blocks = (data && Array.isArray(data.content)) ? data.content : [];
+      var text = blocks.filter(function (b) { return b && b.type === 'text'; })
+        .map(function (b) { return b.text || ''; }).join('\n');
+
+      var scores = parseScores(text);
+      if (!scores) {
+        window.console.warn('Detour: empty parse. Block types: ' +
+          blocks.map(function (b) { return b && b.type; }).join(',') +
+          ' stop_reason: ' + (data && data.stop_reason));
+        return {
+          list: applyHeuristic(trimmed),
+          usedClaude: false,
+          note: 'Claude replied in a shape Detour could not read, so the ranking is local.'
+        };
+      }
+
+      var byId = {};
+      for (var i = 0; i < scores.length; i++) {
+        var row = scores[i];
+        if (row && row.id) byId[String(row.id)] = row;
+      }
+      for (var j = 0; j < trimmed.length; j++) {
+        var hit = byId[trimmed[j].id];
+        if (hit && isFinite(Number(hit.weirdness))) {
+          trimmed[j].score = Number(hit.weirdness);
+          trimmed[j].pitch = String(hit.pitch || '');
+        } else {
+          trimmed[j].score = heuristicScore(trimmed[j]);
+        }
+      }
+      return { list: trimmed, usedClaude: true, note: '' };
+    }).catch(function (err) {
+      return {
+        list: applyHeuristic(trimmed),
+        usedClaude: false,
+        note: 'Claude did not answer (' + err.message + '), so the ranking is local and there are no pitches.'
+      };
+    });
+  }
+
+  function topByScore(list) {
+    var ranked = list.slice().sort(function (a, b) {
+      if (b.score !== a.score) return b.score - a.score;
+      return a.detour - b.detour;
+    }).slice(0, MAX_PINS);
+    ranked.sort(function (a, b) { return a.position - b.position; });
+    return ranked;
+  }
+
+  /* ---------- 9. render ---------- */
+
+  function clearChildren(node) {
+    while (node.firstChild) {
+      node.removeChild(node.firstChild);
+    }
+  }
+
+  function openSheet(item, n) {
+    el.sheetMeta.textContent = 'Stop ' + n + ' at mile ' + Math.round(item.position) +
+      ', ' + item.detour.toFixed(1) + ' miles off the route';
+    el.sheetName.textContent = item.name;
+    el.sheetPitch.textContent = item.pitch || ('Tagged ' + item.tag + ' by OpenStreetMap contributors.');
+    el.sheetMap.href = 'https://maps.google.com/?q=' + item.lat + ',' + item.lon;
+    el.sheet.classList.add('open');
+  }
+
+  function closeSheet() {
+    el.sheet.classList.remove('open');
+  }
+
+  function render(results) {
+    pinLayer.clearLayers();
+    clearChildren(el.stops);
+
+    if (!results.length) {
+      el.empty.hidden = false;
+      el.empty.textContent = 'That route came back empty. Nothing tagged as an attraction, artwork, viewpoint, museum, or memorial sits within five miles of the road. Try a longer trip or a different pair of cities.';
+      return;
+    }
+    el.empty.hidden = true;
+
+    results.forEach(function (item, i) {
+      var n = i + 1;
+
+      var icon = L.divIcon({
+        className: '',
+        html: '<div class="marker-plaque">' + n + '</div>',
+        iconSize: [28, 28],
+        iconAnchor: [14, 14]
+      });
+      var marker = L.marker([item.lat, item.lon], { icon: icon, title: item.name });
+      marker.on('click', function () { openSheet(item, n); });
+      pinLayer.addLayer(marker);
+
+      var li = document.createElement('li');
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'stop';
+
+      var post = document.createElement('span');
+      post.className = 'post';
+      post.textContent = String(Math.round(item.position));
+      var em = document.createElement('em');
+      em.textContent = 'MILE';
+      post.appendChild(em);
+
+      var body = document.createElement('span');
+      var h3 = document.createElement('h3');
+      h3.textContent = n + '. ' + item.name;
+      var meta = document.createElement('p');
+      meta.textContent = item.tag + ', ' + item.detour.toFixed(1) + ' miles off the route';
+      body.appendChild(h3);
+      body.appendChild(meta);
+
+      if (item.pitch) {
+        var pitch = document.createElement('p');
+        pitch.className = 'pitch';
+        pitch.textContent = item.pitch;
+        body.appendChild(pitch);
+      }
+
+      btn.appendChild(post);
+      btn.appendChild(body);
+      btn.addEventListener('click', function () {
+        map.setView([item.lat, item.lon], 12);
+        openSheet(item, n);
+      });
+
+      li.appendChild(btn);
+      el.stops.appendChild(li);
+    });
+  }
+
+  /* ---------- 10. orchestration ---------- */
+
+  function resetTrip() {
+    state.candidates = [];
+    state.results = [];
+    if (pinLayer) pinLayer.clearLayers();
+    clearChildren(el.stops);
+    closeSheet();
+    el.summary.hidden = true;
+    setError('');
+  }
+
+  function setBusy(on, label) {
+    state.busy = on;
+    el.submit.disabled = on;
+    el.submit.textContent = on ? (label || 'Working') : 'Find stops';
+  }
+
+  function run(startText, endText) {
+    resetTrip();
+    setBusy(true, 'Locating');
+    setStatus('Looking up ' + startText + '.');
+
+    var origin = null;
+    var destination = null;
+
+    return geocode(startText).then(function (a) {
+      if (!a) throw new Error('Could not find a place called ' + startText + '. Try adding a state, like Salina, KS.');
+      origin = a;
+      setStatus('Looking up ' + endText + '.');
+      return sleep(1100);
+    }).then(function () {
+      return geocode(endText);
+    }).then(function (b) {
+      if (!b) throw new Error('Could not find a place called ' + endText + '. Try adding a state, like Taos, NM.');
+      destination = b;
+      state.origin = origin;
+      state.destination = destination;
+      setBusy(true, 'Routing');
+      setStatus('Drawing the driving route.');
+      return fetchRoute(origin, destination);
+    }).then(function (route) {
+      state.coords = route.coords;
+      state.totalMiles = route.miles;
+      state.mileage = buildMileage(route.coords);
+      state.samples = decimate();
+      window.console.log('Detour: route has ' + route.coords.length + ' vertices, ' +
+        Math.round(route.miles) + ' mi, ' + state.samples.length + ' samples.');
+
+      el.miles.textContent = Math.round(route.miles);
+      el.summary.hidden = false;
+
+      setBusy(true, 'Sweeping');
+      setStatus('Sweeping ' + state.samples.length + ' points along ' + Math.round(route.miles) +
+        ' miles of road for anything worth stopping at.');
+      return fetchAttractions(state.samples);
+    }).then(function (raw) {
+      if (!raw.length) {
+        throw new Error('Overpass answered but returned nothing named along that route. If the console shows a timeout remark, try a shorter trip.');
+      }
+      state.candidates = snapToRoute(raw);
+      if (!state.candidates.length) {
+        render([]);
+        el.count.textContent = '0';
+        setStatus('');
+        var st = state.snapStats || {};
+        var closest = isFinite(st.minDetour) ? st.minDetour.toFixed(1) + ' miles' : 'not measurable';
+        setError('Found ' + raw.length + ' named places near the corridor, but none within ' +
+          MAX_DETOUR_MILES + ' miles of the actual road. Closest was ' + closest + '.');
+        return null;
+      }
+      setBusy(true, 'Ranking');
+      setStatus('Ranking ' + state.candidates.length + ' candidates.');
+      return scoreWithClaude(state.candidates);
+    }).then(function (scored) {
+      if (!scored) return;
+      state.results = topByScore(scored.list);
+      el.count.textContent = String(state.results.length);
+      render(state.results);
+      var tail = scored.usedClaude ? '' : (scored.note || 'No API key saved, so the ranking is local and there are no pitches.');
+      setStatus(state.results.length + ' stops along ' + Math.round(state.totalMiles) +
+        ' miles. ' + tail);
+    }).catch(function (err) {
+      setStatus('');
+      setError(err && err.message ? err.message : 'Something went wrong. Try again.');
+    }).then(function () {
+      setBusy(false);
+    });
+  }
+
+  /* ---------- wiring ---------- */
+
+  function startSearch() {
+    if (state.busy) return;
+    var a = el.start.value.trim();
+    var b = el.end.value.trim();
+    if (!a || !b) {
+      setError('Enter both a starting city and an ending city.');
+      return;
+    }
+    try {
+      run(a, b);
+    } catch (err) {
+      setBusy(false);
+      setError('Could not start the search: ' + (err && err.message ? err.message : 'unknown error'));
+    }
+  }
+
+  function bind() {
+    el.form = document.getElementById('plan');
+    el.start = document.getElementById('start');
+    el.end = document.getElementById('end');
+    el.submit = document.getElementById('submit');
+    el.status = document.getElementById('status');
+    el.error = document.getElementById('error');
+    el.summary = document.getElementById('summary');
+    el.miles = document.getElementById('miles');
+    el.count = document.getElementById('count');
+    el.stops = document.getElementById('stops');
+    el.empty = document.getElementById('empty');
+    el.sheet = document.getElementById('sheet');
+    el.sheetMeta = document.getElementById('sheet-meta');
+    el.sheetName = document.getElementById('sheet-name');
+    el.sheetPitch = document.getElementById('sheet-pitch');
+    el.sheetMap = document.getElementById('sheet-map');
+    el.scrim = document.getElementById('scrim');
+    el.apikey = document.getElementById('apikey');
+
+    var stamp = document.getElementById('build');
+    if (stamp) stamp.textContent = 'Build ' + BUILD;
+    window.console.log('Detour build ' + BUILD);
+
+    el.form.addEventListener('submit', function (evt) {
+      evt.preventDefault();
+      startSearch();
+    });
+
+    el.submit.addEventListener('click', function (evt) {
+      evt.preventDefault();
+      startSearch();
+    });
+
+    document.getElementById('open-settings').addEventListener('click', function () {
+      el.apikey.value = getKey();
+      el.scrim.hidden = false;
+      el.apikey.focus();
+    });
+
+    document.getElementById('close-settings').addEventListener('click', function () {
+      el.scrim.hidden = true;
+    });
+
+    document.getElementById('save-key').addEventListener('click', function () {
+      writeStore(API_STORE_KEY, el.apikey.value.trim());
+      el.scrim.hidden = true;
+      setStatus(el.apikey.value.trim() ? 'Key saved in this browser.' : 'Key cleared.');
+    });
+
+    el.scrim.addEventListener('click', function (evt) {
+      if (evt.target === el.scrim) el.scrim.hidden = true;
+    });
+
+    document.getElementById('sheet-close').addEventListener('click', closeSheet);
+
+    document.addEventListener('keydown', function (evt) {
+      if (evt.key !== 'Escape') return;
+      if (!el.scrim.hidden) el.scrim.hidden = true;
+      closeSheet();
+    });
+  }
+
+  function loadLeaflet() {
+    if (typeof window.L !== 'undefined') return Promise.resolve(true);
+    return new Promise(function (resolve) {
+      var css = document.createElement('link');
+      css.rel = 'stylesheet';
+      css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+      document.head.appendChild(css);
+
+      var s = document.createElement('script');
+      s.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+      s.onload = function () { resolve(typeof window.L !== 'undefined'); };
+      s.onerror = function () { resolve(false); };
+      document.body.appendChild(s);
+    });
+  }
+
+  function boot() {
+    bind();
+
+    window.addEventListener('error', function (evt) {
+      setError('Script error: ' + (evt && evt.message ? evt.message : 'unknown') + '. See the console.');
+    });
+    window.addEventListener('unhandledrejection', function (evt) {
+      var r = evt && evt.reason;
+      setError('Unhandled failure: ' + (r && r.message ? r.message : String(r)));
+    });
+
+    loadLeaflet().then(function (ok) {
+      if (!ok) {
+        setError('Leaflet did not load from jsdelivr or unpkg. Something on this network or an extension is blocking the CDN.');
+        return;
+      }
+      try {
+        initMap();
+      } catch (err) {
+        setError('The map failed to start: ' + (err && err.message ? err.message : 'unknown error'));
+      }
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+}());
+</script>
+</body>
+</html>
