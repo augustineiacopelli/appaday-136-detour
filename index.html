@@ -461,7 +461,17 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js">
+async function getModel(tier = 'sonnet') {
+  try {
+    const response = await fetch('../config.json');
+    const config = await response.json();
+    return config.models[tier];
+  } catch {
+    return 'claude-sonnet-5-5';
+  }
+}
+</script>
 <script>
 (function () {
   'use strict';
@@ -1290,6 +1300,17 @@
     boot();
   }
 }());
+
+async function getModel(tier = 'sonnet') {
+  try {
+    const response = await fetch('../config.json');
+    const config = await response.json();
+    return config.models[tier];
+  } catch {
+    return 'claude-sonnet-5-5';
+  }
+}
 </script>
 </body>
 </html>
+
